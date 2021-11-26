@@ -2,74 +2,94 @@ mapboxgl.accessToken = token;
 
 const map = new mapboxgl.Map({
     container: 'map',
-    zoom: 5,
-    center: [3, 47],
-    style: 'mapbox://styles/mapbox/light-v10'
+    style: 'mapbox://styles/mapbox/light-v10',
+    center: [4.5, 45.5],
+    zoom: 7
 });
+let activeDeptId = null;
 
-map.addControl(new mapboxgl.NavigationControl());
+map.on('load', async () => {
+    const csvData = await fetch('data/air_data_aurat_2016_2018.csv').then((response) => response.text());
+    let pollutionByDept = {}, lineFields, csvLines = csvData.split("\n").slice(1);
+    for (const line of csvLines) {
+        lineFields = line.split(';');
+        pollutionByDept[lineFields[0]] = parseFloat(lineFields[1]);
+    }
 
-// filters for classifying earthquakes into five categories based on magnitude
-const mag1 = ['<', ['get', 'mag'], 2];
-const mag2 = ['all', ['>=', ['get', 'mag'], 2], ['<', ['get', 'mag'], 3]];
-const mag3 = ['all', ['>=', ['get', 'mag'], 3], ['<', ['get', 'mag'], 4]];
-const mag4 = ['all', ['>=', ['get', 'mag'], 4], ['<', ['get', 'mag'], 5]];
-const mag5 = ['>=', ['get', 'mag'], 5];
-
-// colors to use for the categories
-const colors = ['#fed976', '#feb24c', '#fd8d3c', '#fc4e2a', '#e31a1c'];
-
-map.on('load', () => {
-    map.addSource('departement', {
-        'type': 'geojson',
-        'data': 'https://france-geojson.gregoiredavid.fr/repo/departements.geojson',
-    });
-
-
-    let xhr = new XMLHttpRequest();
-    xhr.open("GET", "data/air_data_aurat_2016_2018.csv");
-    xhr.responseType = "csv";
-    xhr.send();
-
-    xhr.onload = function(){
-
-        if (xhr.status != 200){
-            alert("Erreur " + xhr.status + " : " + xhr.statusText);
-        }else{
-            alert(xhr.response.length + " octets  téléchargés\n" + JSON.stringify(xhr.response));
+    fetch('https://france-geojson.gregoiredavid.fr/repo/departements.geojson').then((response) => response.json()).then((geojsonData) => {
+        for (const f of geojsonData.features) {
+            f.properties.pollution = pollutionByDept[f.properties.nom];
         }
-    };
+        map.addSource('departements', {
+            'type': 'geojson',
+            'data': geojsonData,
+            'generateId': true
+        });
 
-    xhr.onerror = function(){
-        alert("La requête a échoué");
-    };
+        map.addLayer({
+            'id': 'departements-fills',
+            'type': 'fill',
+            'source': 'departements',
+            'layout': {},
+            'paint': {
+                'fill-color': [
+                    'case',
+                    ['>', ['get', 'pollution'], 11],
+                    '#FA190D',
+                    ['>', ['get', 'pollution'], 10],
+                    '#DE0B4E',
+                    ['>', ['get', 'pollution'], 9],
+                    '#F500CA',
+                    ['>', ['get', 'pollution'], 8],
+                    '#B90BDE',
+                    ['>', ['get', 'pollution'], 0],
+                    '#900DFA',
+                    '#FFF'
+                ],
+                'fill-opacity': [
+                    'case',
+                    ['boolean', ['feature-state', 'hover'], false],
+                    1,
+                    0.5
+                ]
+            }
+        });
 
-    xhr.onprogress = function(event){
-        if (event.lengthComputable){
-            alert(event.loaded + " octets reçus sur un total de " + event.total);
-        }
-    };
+        map.addLayer({
+            'id': 'departements-borders',
+            'type': 'line',
+            'source': 'departements',
+            'layout': {},
+            'paint': {
+                'line-color': '#888',
+                'line-width': 1
+            }
+        });
 
-    map.addLayer({
-        'id': 'departement',
-        'type': 'fill',
-        'source': 'departement', // reference the data source
-        'layout': {},
-        'paint': {
-            'fill-color': '#0080ff', // blue color fill
-            'fill-opacity': 0.5
-        }
-    });
-    map.addLayer({
-        'id': 'outline',
-        'type': 'line',
-        'source': 'departement',
-        'layout': {},
-        'paint': {
-            'line-color': '#000',
-            'line-width': 1
-        }
-    });
+        map.on('mousemove', 'departements-fills', (e) => {
+            if (e.features.length > 0) {
+                if (activeDeptId !== null) {
+                    map.setFeatureState(
+                        { source: 'departements', id: activeDeptId },
+                        { hover: false }
+                    );
+                }
+                activeDeptId = e.features[0].id;
+                map.setFeatureState(
+                    { source: 'departements', id: activeDeptId },
+                    { hover: true }
+                );
+            }
+        });
+
+        map.on('mouseleave', 'departements-fills', () => {
+            if (activeDeptId !== null) {
+                map.setFeatureState(
+                    { source: 'departements', id: activeDeptId },
+                    { hover: false }
+                );
+            }
+            activeDeptId = null;
+        });
+    })
 });
-
-
