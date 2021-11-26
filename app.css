@@ -1,3 +1,11 @@
 body{
     margin: 0;
+    display: flex;
+}
+
+body>div{
+    width: 50%;
+    height: 100vh;
+    display: flex;
+    align-items: center;
 }
